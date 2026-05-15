@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ProjectFlow | Smart Project + Meeting Hub</title>
+    <!-- Tailwind CSS + FontAwesome + Google Fonts + SortableJS for Kanban drag-drop -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body { background: #f4f7fc; }
+        .table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .table-scroll::-webkit-scrollbar-track { background: #e9eef3; border-radius: 8px; }
+        .table-scroll::-webkit-scrollbar-thumb { background: #b9c4d1; border-radius: 8px; }
+        .kanban-column { min-height: 500px; background: #f9fafb; border-radius: 1rem; transition: all 0.2s; }
+        .kanban-card { cursor: grab; transition: 0.1s; }
+        .kanban-card:active { cursor: grabbing; }
+        .status-badge { font-size: 0.7rem; font-weight: 500; padding: 0.2rem 0.6rem; border-radius: 9999px; }
+        .modal-backdrop { background-color: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
+        .view-btn-active { background-color: #e0e7ff; color: #4f46e5; }
+        .sow-loading { opacity: 0.6; pointer-events: none; }
+    </style>
+</head>
+<body class="antialiased p-5 md:p-7">
+
+<div class="max-w-[1600px] mx-auto">
+    <!-- Header with Tabs -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-project-diagram text-indigo-500"></i> ProjectHub</h1>
+            <p class="text-gray-500 text-sm">Smart projects · Live mapping · SOW generation · Integrated meetings</p>
+        </div>
+        <button id="newProjectBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 font-medium"><i class="fas fa-plus-circle"></i> New Project</button>
+    </div>
+
+    <!-- TABS: Projects / Meetings -->
+    <div class="flex border-b border-gray-200 mb-6 gap-1">
+        <button id="tabProjectsBtn" class="px-5 py-2.5 text-sm font-medium rounded-t-xl transition bg-white text-indigo-700 border-b-2 border-indigo-500">📋 Projects</button>
+        <button id="tabMeetingsBtn" class="px-5 py-2.5 text-sm font-medium rounded-t-xl transition bg-gray-50 text-gray-600">🎥 Meetings</button>
+    </div>
+
+    <!-- ========================== PROJECTS SECTION ========================== -->
+    <div id="projectsSection">
+        <!-- Filters + View Toggle + Search -->
+        <div class="bg-white rounded-2xl shadow-sm p-4 mb-6 border border-gray-100">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
+                <input type="text" id="projectSearch" placeholder="Search by project, customer, lead, owner" class="border rounded-xl px-3 py-2 text-sm">
+                <select id="filterStatus" class="border rounded-xl px-3 py-2 text-sm"><option value="">All Status</option><option>Draft</option><option>Active</option><option>Completed</option><option>On Hold</option><option>Cancelled</option></select>
+                <select id="filterStage" class="border rounded-xl px-3 py-2 text-sm"><option value="">All Opportunity Stages</option><option>Discovery</option><option>Proposal</option><option>Negotiation</option><option>Closed Won</option><option>Closed Lost</option></select>
+                <select id="filterCustomer" class="border rounded-xl px-3 py-2 text-sm"><option value="">All Customers</option></select>
+                <input type="date" id="filterDateFrom" class="border rounded-xl px-3 py-2 text-sm" placeholder="From date">
+                <input type="date" id="filterDateTo" class="border rounded-xl px-3 py-2 text-sm" placeholder="To date">
+            </div>
+            <div class="flex flex-wrap justify-between items-center gap-3">
+                <div class="flex gap-2 bg-gray-100 p-1 rounded-xl"><button data-view="table" class="view-switch px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 view-btn-active"><i class="fas fa-table"></i> Table</button><button data-view="card" class="view-switch px-3 py-1.5 rounded-lg text-sm"><i class="fas fa-th-large"></i> Card</button><button data-view="kanban" class="view-switch px-3 py-1.5 rounded-lg text-sm"><i class="fas fa-columns"></i> Kanban</button><button data-view="list" class="view-switch px-3 py-1.5 rounded-lg text-sm"><i class="fas fa-list"></i> List</button></div>
+                <div class="flex gap-2"><select id="sortProjects" class="border rounded-lg px-2 py-1 text-sm"><option value="recent">📅 Recent first</option><option value="oldest">📆 Oldest first</option><option value="name_asc">📁 Name A-Z</option><option value="customer_asc">🏢 Customer A-Z</option><option value="lead_asc">👤 Lead A-Z</option><option value="status">📌 Status</option></select></div>
+            </div>
+        </div>
+
+        <!-- PROJECT CONTAINER (dynamic views) -->
+        <div id="projectsContainer" class="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 min-h-[500px]"></div>
+        <!-- Pagination -->
+        <div id="projectPagination" class="flex justify-between items-center mt-5 px-2"></div>
+        <div id="emptyProjectsMsg" class="hidden text-center py-12 text-gray-400"><i class="fas fa-folder-open text-4xl mb-2"></i><p>No projects found. Create your first project.</p></div>
+    </div>
+
+    <!-- ========================== MEETINGS SECTION (hidden initially) ========================== -->
+    <div id="meetingsSection" class="hidden">
+        <!-- Re-use existing meetings table from previous implementation but keep compact -->
+        <div class="bg-white rounded-2xl shadow-sm p-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3"><input type="text" id="meetingSearch" placeholder="Search meetings" class="border rounded-xl px-3 py-2"><select id="meetingPlatformFilter"><option>All platforms</option><option>Zoom</option><option>Microsoft Teams</option></select><input type="date" id="meetingDateFrom"><input type="date" id="meetingDateTo"></div>
+        </div>
+        <div class="table-scroll overflow-x-auto bg-white rounded-xl shadow"><table class="min-w-[1200px] w-full text-sm"><thead class="bg-gray-50"><tr><th>Project</th><th>Lead</th><th>Topic</th><th>Date</th><th>Transcript</th><th>AI Insights</th><th>Actions</th></tr></thead><tbody id="meetingsTableBody"></tbody></table></div>
+    </div>
+</div>
+
+<!-- Project Form Modal (Create/Edit) -->
+<div id="projectModal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop">
+    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl mx-4"><div class="sticky bg-white border-b px-6 py-4 flex justify-between"><h3 id="modalProjectTitle" class="text-xl font-bold">Project</h3><button class="closeProjectModalBtn"><i class="fas fa-times text-xl"></i></button></div>
+        <div class="p-6 space-y-4"><input type="hidden" id="projectEditId"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium">Project Name *</label><input id="projName" class="w-full border rounded-xl px-3 py-2"></div><div><label>Customer *</label><select id="projCustomerId" class="w-full border rounded-xl px-3 py-2"></select></div><div><label>Lead *</label><select id="projLeadId" class="w-full border rounded-xl px-3 py-2"></select></div><div><label>Project Owner *</label><input id="projOwner" class="w-full border rounded-xl px-3 py-2"></div><div><label>Opportunity Stage</label><select id="projStage"><option>Discovery</option><option>Proposal</option><option>Negotiation</option><option>Closed Won</option><option>Closed Lost</option></select></div><div><label>Status *</label><select id="projStatus"><option>Draft</option><option>Active</option><option>Completed</option><option>On Hold</option><option>Cancelled</option></select></div></div><div><label>Description</label><textarea id="projDesc" rows="2" class="w-full border rounded-xl"></textarea></div><div><label>Notes</label><textarea id="projNotes" rows="2" class="w-full border rounded-xl"></textarea></div><div><label>Tasks (comma separated)</label><input id="projTasks" class="w-full border rounded-xl"></div><div id="formError" class="text-red-500 text-sm"></div><div class="flex justify-end gap-3"><button class="closeProjectModalBtn px-4 py-2 border rounded-xl">Cancel</button><button id="saveProjectBtn" class="bg-indigo-600 text-white px-5 py-2 rounded-xl">Save Project</button></div></div></div>
+</div>
+
+<!-- Project Details Popup -->
+<div id="detailsPopup" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop"><div class="bg-white rounded-2xl max-w-2xl w-full p-6 max-h-[85vh] overflow-auto"><div class="flex justify-between"><h3 class="text-lg font-bold">Project Details</h3><button id="closeDetailsBtn"><i class="fas fa-times"></i></button></div><div id="detailsContent" class="space-y-3 text-sm mt-4"></div><div class="flex gap-2 mt-6"><button id="copyProjectIdBtn" class="border px-3 py-1 rounded">Copy ID</button><button id="editFromDetailsBtn" class="bg-indigo-100 px-3 py-1 rounded">Edit Project</button><button id="generateSowFromDetails" class="bg-green-100 px-3 py-1 rounded">Generate SOW</button></div></div></div>
+
+<script>
+    // ---------- MOCK DATA (Customers, Leads, Projects, Meetings) ----------
+    let customers = [{ id: "c1", name: "Acme Corp" }, { id: "c2", name: "Globex Inc" }, { id: "c3", name: "Stark Industries" }, { id: "c4", name: "Wayne Enterprises" }];
+    let leads = [{ id: "l1", name: "Emma Watson" }, { id: "l2", name: "James Carter" }, { id: "l3", name: "Sophia Lin" }, { id: "l4", name: "Michael Chen" }, { id: "l5", name: "Olivia Nkosi" }];
+    let projects = [
+        { id: "pr1", name: "Synthera AI Platform", customerId: "c1", leadId: "l1", owner: "John Doe", opportunityStage: "Discovery", status: "Active", description: "AI integration suite", notes: "Budget approved", tasks: "ML model, API", createdDate: "2025-04-01", updatedDate: "2025-05-10", sowStatus: "Pending" },
+        { id: "pr2", name: "Dimcon Cg Upgrade", customerId: "c2", leadId: "l2", owner: "Sarah Lee", opportunityStage: "Negotiation", status: "Draft", description: "Cloud migration", notes: "Compliance review", tasks: "Migration plan", createdDate: "2025-05-05", updatedDate: "2025-05-12", sowStatus: "Pending" },
+        { id: "pr3", name: "Rootstack Dashboard", customerId: "c3", leadId: "l4", owner: "Mike Ross", opportunityStage: "Proposal", status: "Active", description: "BI dashboards", notes: "KPI alignment", tasks: "Design mockups", createdDate: "2025-04-20", updatedDate: "2025-05-14", sowStatus: "Generated" },
+        { id: "pr4", name: "ERP Tool Evaluation", customerId: "c4", leadId: "l5", owner: "Lisa Ray", opportunityStage: "Closed Won", status: "Completed", description: "ERP selection finalized", notes: "Contract signed", tasks: "Implementation prep", createdDate: "2025-03-10", updatedDate: "2025-05-01", sowStatus: "Generated" },
+        { id: "pr5", name: "Training Portal Revamp", customerId: "c1", leadId: "l3", owner: "Tom Harris", opportunityStage: "Discovery", status: "On Hold", description: "LMS upgrade", notes: "Pending resources", tasks: "Content migration", createdDate: "2025-05-02", updatedDate: "2025-05-15", sowStatus: "Pending" }
+    ];
+    let meetings = [
+        { id: "m1", projectId: "pr1", topic: "Kickoff", platform: "Zoom", meetingDate: "2025-05-10T10:00", transcript: "AI roadmap defined", aiInsights: "Use LLM", leadId: "l1" },
+        { id: "m2", projectId: "pr2", topic: "Requirements", platform: "Teams", meetingDate: "2025-05-12T14:00", transcript: "Gathered specs", aiInsights: "Cloud priority", leadId: "l2" },
+        { id: "m3", projectId: "pr3", topic: "UI Review", platform: "Zoom", meetingDate: "2025-05-14T11:00", transcript: "Dashboard mockup", aiInsights: "User-centric", leadId: "l4" }
+    ];
+
+    function capitalize(str) { return str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : ''; }
+    function getCustomerName(cid) { let c = customers.find(c=>c.id===cid); return c ? c.name : 'Unknown'; }
+    function getLeadName(lid) { let l = leads.find(l=>l.id===lid); return l ? l.name : 'Unknown'; }
+    function getMeetingsByProject(pid) { return meetings.filter(m=>m.projectId===pid); }
+    function getLatestTranscript(pid) { let ms = getMeetingsByProject(pid); if(ms.length) return ms[ms.length-1].transcript || '—'; return '—'; }
+    function getAggregatedAI(pid) { let ms = getMeetingsByProject(pid); return ms.map(m=>m.aiInsights).filter(Boolean).join('; ') || '—'; }
+    function getFollowUps(pid) { return "Review progress, next steps"; } // mock follow-ups dynamic
+
+    let currentProjectView = "table";
+    let currentPage = 1, rowsPerPage = 5;
+    let filteredProjects = [...projects];
+
+    function filterProjects() {
+        let search = document.getElementById('projectSearch').value.toLowerCase();
+        let status = document.getElementById('filterStatus').value;
+        let stage = document.getElementById('filterStage').value;
+        let customerVal = document.getElementById('filterCustomer').value;
+        let fromDate = document.getElementById('filterDateFrom').value;
+        let toDate = document.getElementById('filterDateTo').value;
+        filteredProjects = projects.filter(p => {
+            let matchSearch = p.name.toLowerCase().includes(search) || getCustomerName(p.customerId).toLowerCase().includes(search) || getLeadName(p.leadId).toLowerCase().includes(search) || p.owner.toLowerCase().includes(search);
+            let matchStatus = !status || p.status === status;
+            let matchStage = !stage || p.opportunityStage === stage;
+            let matchCust = !customerVal || p.customerId === customerVal;
+            let matchDate = true;
+            if(fromDate && p.createdDate < fromDate) matchDate = false;
+            if(toDate && p.createdDate > toDate) matchDate = false;
+            return matchSearch && matchStatus && matchStage && matchCust && matchDate;
+        });
+        // sorting
+        let sortBy = document.getElementById('sortProjects').value;
+        if(sortBy === 'recent') filteredProjects.sort((a,b)=>new Date(b.createdDate)-new Date(a.createdDate));
+        else if(sortBy === 'oldest') filteredProjects.sort((a,b)=>new Date(a.createdDate)-new Date(b.createdDate));
+        else if(sortBy === 'name_asc') filteredProjects.sort((a,b)=>a.name.localeCompare(b.name));
+        else if(sortBy === 'customer_asc') filteredProjects.sort((a,b)=>getCustomerName(a.customerId).localeCompare(getCustomerName(b.customerId)));
+        else if(sortBy === 'lead_asc') filteredProjects.sort((a,b)=>getLeadName(a.leadId).localeCompare(getLeadName(b.leadId)));
+        else if(sortBy === 'status') filteredProjects.sort((a,b)=>a.status.localeCompare(b.status));
+        currentPage = 1;
+        renderProjectsView();
+    }
+
+    function renderProjectsView() {
+        const container = document.getElementById('projectsContainer');
+        const paginationDiv = document.getElementById('projectPagination');
+        const emptyMsg = document.getElementById('emptyProjectsMsg');
+        if(filteredProjects.length === 0) { emptyMsg.classList.remove('hidden'); container.innerHTML = ''; paginationDiv.innerHTML = ''; return; }
+        emptyMsg.classList.add('hidden');
+        if(currentProjectView === 'table') renderTableView(container, paginationDiv);
+        else if(currentProjectView === 'card') renderCardView(container, paginationDiv);
+        else if(currentProjectView === 'list') renderListView(container, paginationDiv);
+        else if(currentProjectView === 'kanban') renderKanbanView(container, paginationDiv);
+    }
+
+    function renderTableView(container, paginationDiv) {
+        let total = filteredProjects.length, totalPages = Math.ceil(total/rowsPerPage);
+        let start = (currentPage-1)*rowsPerPage, paginated = filteredProjects.slice(start, start+rowsPerPage);
+        let html = `<div class="overflow-x-auto"><table class="min-w-[1300px] w-full text-sm"><thead class="bg-gray-50 border-b"><tr>${['Project','Customer','Lead','Owner','Stage','Status','Description','Notes','Tasks','Meeting History','Transcript','AI Insights','Follow-ups','SOW Status','Created','Updated','Actions'].map(h=>`<th class="px-3 py-2 text-left">${h}</th>`).join('')}</tr></thead><tbody>`;
+        paginated.forEach(p => {
+            let meetingCount = getMeetingsByProject(p.id).length;
+            html += `<tr class="border-b hover:bg-gray-50"><td class="px-3 py-2 font-medium"><button class="viewProjectDetails text-indigo-600 underline" data-id="${p.id}">${capitalize(p.name)}</button></td>
+            <td>${capitalize(getCustomerName(p.customerId))}</td><td>${capitalize(getLeadName(p.leadId))}</td><td>${p.owner}</td><td>${p.opportunityStage}</td><td><span class="status-badge ${p.status==='Active'?'bg-green-100 text-green-700':p.status==='Completed'?'bg-blue-100':p.status==='Draft'?'bg-gray-100':'bg-yellow-100'}">${p.status}</span></td>
+            <td class="max-w-xs truncate">${p.description||'—'}</td><td>${p.notes||'—'}</td><td>${p.tasks||'—'}</td><td>${meetingCount} meetings</td><td>${getLatestTranscript(p.id)}</td><td>${getAggregatedAI(p.id)}</td><td>${getFollowUps(p.id)}</td><td>${p.sowStatus}</td><td>${p.createdDate}</td><td>${p.updatedDate}</td>
+            <td><div class="flex gap-2"><button class="editProjectBtn text-blue-500" data-id="${p.id}"><i class="fas fa-edit"></i></button><button class="deleteProjectBtn text-red-500" data-id="${p.id}"><i class="fas fa-trash"></i></button><button class="generateSowBtn text-purple-500" data-id="${p.id}">📄 SOW</button><button class="viewProjectDetails text-gray-500" data-id="${p.id}"><i class="fas fa-eye"></i></button></div></td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+        container.innerHTML = html;
+        paginationDiv.innerHTML = `<div class="text-sm">${total} projects</div><div class="flex gap-2">${Array.from({length:totalPages},(_,i)=>`<button class="pageBtn px-2 py-1 rounded ${currentPage===i+1?'bg-indigo-600 text-white':'bg-gray-100'}" data-page="${i+1}">${i+1}</button>`).join('')}</div>`;
+        attachProjectActions();
+    }
+
+    function renderCardView(container, paginationDiv) {
+        let total = filteredProjects.length, start=(currentPage-1)*rowsPerPage, paginated=filteredProjects.slice(start,start+rowsPerPage);
+        let html = `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+        paginated.forEach(p => {
+            html += `<div class="border rounded-xl p-4 shadow-sm bg-white"><div class="font-bold text-indigo-800 cursor-pointer viewProjectDetails" data-id="${p.id}">${capitalize(p.name)}</div><div class="text-xs text-gray-500">${getCustomerName(p.customerId)} | Lead: ${getLeadName(p.leadId)}</div><div class="mt-2 text-sm">Status: ${p.status}</div><div class="flex gap-2 mt-3"><button class="editProjectBtn text-blue-500" data-id="${p.id}">Edit</button><button class="generateSowBtn text-purple-500" data-id="${p.id}">SOW</button><button class="viewProjectDetails text-gray-500" data-id="${p.id}">Details</button></div></div>`;
+        });
+        html += `</div>`;
+        container.innerHTML = html;
+        paginationDiv.innerHTML = `<div class="flex gap-2 mt-4">${Array.from({length:Math.ceil(total/rowsPerPage)},(_,i)=>`<button class="pageBtn px-2 py-1 rounded ${currentPage===i+1?'bg-indigo-600 text-white':'bg-gray-100'}" data-page="${i+1}">${i+1}</button>`).join('')}</div>`;
+        attachProjectActions();
+    }
+
+    function renderListView(container, paginationDiv) {
+        let total = filteredProjects.length, start=(currentPage-1)*rowsPerPage, paginated=filteredProjects.slice(start,start+rowsPerPage);
+        let html = `<ul class="divide-y">${paginated.map(p=>`<li class="py-3 flex justify-between items-center"><div><span class="font-medium viewProjectDetails cursor-pointer text-indigo-600" data-id="${p.id}">${capitalize(p.name)}</span><div class="text-xs text-gray-500">${getCustomerName(p.customerId)} · ${getLeadName(p.leadId)} · ${p.status}</div></div><div><button class="editProjectBtn mr-2" data-id="${p.id}"><i class="fas fa-edit"></i></button><button class="generateSowBtn text-purple-500" data-id="${p.id}">SOW</button></div></li>`).join('')}</ul>`;
+        container.innerHTML = html;
+        paginationDiv.innerHTML = `<div class="flex gap-2">${Array.from({length:Math.ceil(total/rowsPerPage)},(_,i)=>`<button class="pageBtn px-2 py-1 rounded ${currentPage===i+1?'bg-indigo-600 text-white':'bg-gray-100'}" data-page="${i+1}">${i+1}</button>`).join('')}</div>`;
+        attachProjectActions();
+    }
+
+    function renderKanbanView(container) {
+        const statuses = ["Draft","Active","Completed","On Hold","Cancelled"];
+        let grouped = {};
+        statuses.forEach(s=> grouped[s] = filteredProjects.filter(p=>p.status===s));
+        let html = `<div class="flex gap-4 overflow-x-auto pb-4">`;
+        for(let status of statuses) {
+            html += `<div class="w-80 flex-shrink-0 bg-gray-50 rounded-xl p-3"><h3 class="font-bold mb-2">${status}</h3><div class="kanban-column min-h-[400px]" data-status="${status}">`;
+            grouped[status].forEach(p => {
+                html += `<div class="kanban-card bg-white p-3 rounded-lg shadow-sm mb-2 border" data-id="${p.id}"><div class="font-medium viewProjectDetails" data-id="${p.id}">${p.name}</div><div class="text-xs text-gray-500">${getLeadName(p.leadId)} | ${getCustomerName(p.customerId)}</div><div class="flex gap-2 mt-2"><button class="editProjectBtn text-xs" data-id="${p.id}">Edit</button><button class="generateSowBtn text-xs text-purple-500" data-id="${p.id}">SOW</button></div></div>`;
+            });
+            html += `</div></div>`;
+        }
+        html += `</div>`;
+        container.innerHTML = html;
+        // Initialize Sortable on each kanban column
+        document.querySelectorAll('.kanban-column').forEach(col => {
+            new Sortable(col, {
+                group: { name: 'projects', pull: true, revertClone: false },
+                animation: 150,
+                onEnd: function(evt) {
+                    let newStatus = evt.to.closest('.kanban-column').dataset.status;
+                    let projectId = evt.item.dataset.id;
+                    let project = projects.find(p=>p.id === projectId);
+                    if(project && project.status !== newStatus) {
+                        project.status = newStatus;
+                        project.updatedDate = new Date().toISOString().slice(0,10);
+                        filterProjects(); // re-render
+                    }
+                }
+            });
+        });
+        attachProjectActions();
+    }
+
+    function attachProjectActions() {
+        document.querySelectorAll('.viewProjectDetails').forEach(btn => btn.addEventListener('click', (e) => { let id = btn.dataset.id; showProjectDetails(id); }));
+        document.querySelectorAll('.editProjectBtn').forEach(btn => btn.addEventListener('click', (e) => { let id = btn.dataset.id; openEditProject(id); }));
+        document.querySelectorAll('.deleteProjectBtn').forEach(btn => btn.addEventListener('click', (e) => { if(confirm('Delete project permanently?')) { let id = btn.dataset.id; projects = projects.filter(p=>p.id!==id); filterProjects(); showToast('Project deleted'); } }));
+        document.querySelectorAll('.generateSowBtn').forEach(btn => btn.addEventListener('click', async (e) => { let id = btn.dataset.id; await generateSOW(id); }));
+        document.querySelectorAll('.pageBtn').forEach(btn => btn.addEventListener('click', (e) => { currentPage = parseInt(e.target.dataset.page); renderProjectsView(); }));
+    }
+
+    async function generateSOW(projectId) {
+        let project = projects.find(p=>p.id===projectId);
+        if(!project) return;
+        let leadName = getLeadName(project.leadId);
+        let confirmMsg = `Generate SOW for "${project.name}"\nLead: ${leadName} (auto-mapped). Continue?`;
+        if(!confirm(confirmMsg)) return;
+        let btn = document.querySelector(`.generateSowBtn[data-id="${projectId}"]`);
+        if(btn) btn.classList.add('sow-loading');
+        await new Promise(r=>setTimeout(r,800));
+        project.sowStatus = "Generated";
+        project.updatedDate = new Date().toISOString().slice(0,10);
+        filterProjects();
+        showToast(`SOW generated for ${project.name} (Lead: ${leadName})`);
+        if(btn) btn.classList.remove('sow-loading');
+    }
+
+    function showProjectDetails(id) {
+        let p = projects.find(p=>p.id===id);
+        if(!p) return;
+        let relatedMeetings = getMeetingsByProject(id);
+        let meetingHtml = relatedMeetings.map(m=>`<li>${m.topic} (${m.meetingDate.slice(0,10)}) - ${m.transcript || 'no transcript'}</li>`).join('');
+        let content = `<div class="grid grid-cols-2 gap-2"><div><strong>ID:</strong> ${p.id}</div><div><strong>Name:</strong> ${p.name}</div><div><strong>Customer:</strong> ${getCustomerName(p.customerId)}</div><div><strong>Lead:</strong> ${getLeadName(p.leadId)}</div><div><strong>Owner:</strong> ${p.owner}</div><div><strong>Stage:</strong> ${p.opportunityStage}</div><div><strong>Status:</strong> ${p.status}</div><div><strong>Created:</strong> ${p.createdDate}</div><div><strong>Updated:</strong> ${p.updatedDate}</div><div><strong>SOW:</strong> ${p.sowStatus}</div></div><div><strong>Description:</strong> ${p.description||'—'}</div><div><strong>Notes:</strong> ${p.notes||'—'}</div><div><strong>Tasks:</strong> ${p.tasks||'—'}</div><div><strong>Meeting History:</strong> <ul class="list-disc ml-5">${meetingHtml||'None'}</ul></div><div><strong>AI Insights:</strong> ${getAggregatedAI(id)}</div><div><strong>Follow-ups:</strong> ${getFollowUps(id)}</div>`;
+        document.getElementById('detailsContent').innerHTML = content;
+        let popup = document.getElementById('detailsPopup');
+        popup.classList.remove('hidden'); popup.classList.add('flex');
+        window.currentDetailProjectId = id;
+        document.getElementById('copyProjectIdBtn').onclick = () => { navigator.clipboard.writeText(p.id); showToast("Project ID copied"); };
+        document.getElementById('editFromDetailsBtn').onclick = () => { popup.classList.add('hidden'); openEditProject(id); };
+        document.getElementById('generateSowFromDetails').onclick = () => { generateSOW(id); popup.classList.add('hidden'); };
+    }
+
+    function openEditProject(id) {
+        let p = projects.find(p=>p.id===id);
+        if(p){ document.getElementById('projectEditId').value=p.id; document.getElementById('projName').value=p.name; document.getElementById('projCustomerId').value=p.customerId; document.getElementById('projLeadId').value=p.leadId; document.getElementById('projOwner').value=p.owner; document.getElementById('projStage').value=p.opportunityStage; document.getElementById('projStatus').value=p.status; document.getElementById('projDesc').value=p.description||''; document.getElementById('projNotes').value=p.notes||''; document.getElementById('projTasks').value=p.tasks||''; document.getElementById('modalProjectTitle').innerText='Edit Project'; document.getElementById('projectModal').classList.remove('hidden'); document.getElementById('projectModal').classList.add('flex'); }
+    }
+    function saveProjectHandler() {
+        let id = document.getElementById('projectEditId').value;
+        let name = document.getElementById('projName').value.trim();
+        let customerId = document.getElementById('projCustomerId').value;
+        let leadId = document.getElementById('projLeadId').value;
+        let owner = document.getElementById('projOwner').value.trim();
+        let stage = document.getElementById('projStage').value;
+        let status = document.getElementById('projStatus').value;
+        if(!name || !customerId || !leadId || !owner) { document.getElementById('formError').innerText='Required fields missing'; return; }
+        let duplicate = projects.find(p => p.leadId === leadId && p.name.toLowerCase() === name.toLowerCase() && p.id !== id);
+        if(duplicate){ document.getElementById('formError').innerText='Duplicate project: same lead and project name'; return; }
+        let now = new Date().toISOString().slice(0,10);
+        if(id) {
+            let idx = projects.findIndex(p=>p.id===id);
+            if(idx!==-1){ projects[idx]={...projects[idx], name, customerId, leadId, owner, opportunityStage:stage, status, description:document.getElementById('projDesc').value, notes:document.getElementById('projNotes').value, tasks:document.getElementById('projTasks').value, updatedDate:now}; }
+        } else {
+            let newId = 'pr'+Date.now();
+            projects.push({id:newId, name, customerId, leadId, owner, opportunityStage:stage, status, description:document.getElementById('projDesc').value, notes:document.getElementById('projNotes').value, tasks:document.getElementById('projTasks').value, createdDate:now, updatedDate:now, sowStatus:'Pending'});
+        }
+        filterProjects();
+        closeProjectModal();
+        showToast('Project saved');
+    }
+    function closeProjectModal(){ document.getElementById('projectModal').classList.add('hidden'); document.getElementById('projectModal').classList.remove('flex'); document.getElementById('formError').innerText=''; }
+    function showToast(msg){ let div=document.createElement('div'); div.className='fixed bottom-5 right-5 bg-green-600 text-white px-4 py-2 rounded shadow z-50'; div.innerText=msg; document.body.appendChild(div); setTimeout(()=>div.remove(),2500); }
+    function populateSelects(){ let custSel=document.getElementById('projCustomerId'); custSel.innerHTML=customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join(''); let leadSel=document.getElementById('projLeadId'); leadSel.innerHTML=leads.map(l=>`<option value="${l.id}">${l.name}</option>`).join(''); let custFilter=document.getElementById('filterCustomer'); custFilter.innerHTML='<option value="">All Customers</option>'+customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join(''); }
+    // Meetings section rendering (simplified)
+    function renderMeetingsTab(){ let tbody=document.getElementById('meetingsTableBody'); tbody.innerHTML=meetings.map(m=>{ let proj=projects.find(p=>p.id===m.projectId); return `<tr><td>${proj?.name||'?'}</td><td>${getLeadName(m.leadId)}</td><td>${m.topic}</td><td>${m.meetingDate.slice(0,10)}</td><td>${m.transcript||'—'}</td><td>${m.aiInsights||'—'}</td><td><button class="text-indigo-500">View</button></td></tr>`; }).join(''); }
+    // Tab switching
+    document.getElementById('tabProjectsBtn').onclick=()=>{ document.getElementById('projectsSection').classList.remove('hidden'); document.getElementById('meetingsSection').classList.add('hidden'); document.getElementById('tabProjectsBtn').classList.add('border-b-2','border-indigo-500','bg-white','text-indigo-700'); document.getElementById('tabMeetingsBtn').classList.remove('border-b-2','border-indigo-500','bg-white','text-indigo-700'); document.getElementById('tabMeetingsBtn').classList.add('bg-gray-50','text-gray-600'); filterProjects(); };
+    document.getElementById('tabMeetingsBtn').onclick=()=>{ document.getElementById('meetingsSection').classList.remove('hidden'); document.getElementById('projectsSection').classList.add('hidden'); renderMeetingsTab(); document.getElementById('tabMeetingsBtn').classList.add('border-b-2','border-indigo-500','bg-white','text-indigo-700'); document.getElementById('tabProjectsBtn').classList.remove('border-b-2','border-indigo-500','bg-white','text-indigo-700'); document.getElementById('tabProjectsBtn').classList.add('bg-gray-50','text-gray-600'); };
+    document.querySelectorAll('.view-switch').forEach(btn=>btn.addEventListener('click',(e)=>{ document.querySelectorAll('.view-switch').forEach(b=>b.classList.remove('view-btn-active','bg-indigo-100','text-indigo-700')); btn.classList.add('view-btn-active','bg-indigo-100','text-indigo-700'); currentProjectView=btn.dataset.view; currentPage=1; renderProjectsView(); }));
+    document.getElementById('newProjectBtn').onclick=()=>{ document.getElementById('projectEditId').value=''; document.getElementById('projName').value=''; document.getElementById('projOwner').value=''; document.getElementById('projDesc').value=''; document.getElementById('projNotes').value=''; document.getElementById('projTasks').value=''; document.getElementById('modalProjectTitle').innerText='New Project'; populateSelects(); document.getElementById('projectModal').classList.remove('hidden'); document.getElementById('projectModal').classList.add('flex'); };
+    document.getElementById('saveProjectBtn').onclick=saveProjectHandler; document.querySelectorAll('.closeProjectModalBtn').forEach(btn=>btn.addEventListener('click',closeProjectModal)); document.getElementById('closeDetailsBtn').onclick=()=>document.getElementById('detailsPopup').classList.add('hidden');
+    document.getElementById('projectSearch').addEventListener('input',filterProjects); document.getElementById('filterStatus').addEventListener('change',filterProjects); document.getElementById('filterStage').addEventListener('change',filterProjects); document.getElementById('filterCustomer').addEventListener('change',filterProjects); document.getElementById('filterDateFrom').addEventListener('change',filterProjects); document.getElementById('filterDateTo').addEventListener('change',filterProjects); document.getElementById('sortProjects').addEventListener('change',filterProjects);
+    populateSelects(); filterProjects(); renderMeetingsTab();
+</script>
+</body>
+</html>
